@@ -1,5 +1,4 @@
 """Create events for upcoming games."""
-import json
 import pickle
 import os.path
 from datetime import datetime, timedelta
@@ -8,6 +7,7 @@ from googleapiclient.discovery import build
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 
+from helpers import read_creds
 
 """
 todo:
@@ -46,13 +46,6 @@ def authenticate_service():
             pickle.dump(creds, token)
     service = build("calendar", "v3", credentials=creds)
     return service
-
-
-def read_creds():
-    """Read credentials file."""
-    with open("credentials.json") as json_file:
-        data = json.load(json_file)
-    return data
 
 
 def get_events(service=None, calendar_id="primary", num_events=10):

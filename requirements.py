@@ -1,3 +1,4 @@
+beautifulsoup4==4.8.1
 cachetools==3.1.1
 certifi==2019.9.11
 chardet==3.0.4
@@ -13,6 +14,8 @@ pyasn1-modules==0.2.7
 requests==2.22.0
 requests-oauthlib==1.2.0
 rsa==4.0
+selenium==3.141.0
 six==1.12.0
+soupsieve==1.9.4
 uritemplate==3.0.0
 urllib3==1.25.6
