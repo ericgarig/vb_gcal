@@ -112,7 +112,6 @@ def add_game_event(
         "dateTime": (dt_obj + timedelta(hours=1)).strftime(dt_to_str),
         "timeZone": tz,
     }
-    emails = [{"email": i} for i in emails]
     if emails:
         event["attendees"] = emails
     return event
@@ -135,7 +134,7 @@ def main():
     # get_events(service, calendar_id)
     event_info = get_schedule()
     [team_name, events] = event_info
-    emails = get_emails()
+    emails = [{"email": i} for i in get_emails()]
     for i in events:
         event_details = add_game_event(
             team_name,
