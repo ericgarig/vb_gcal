@@ -8,14 +8,13 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 
 from helpers import read_creds
+from team_data import get_schedule
 
 """
 todo:
  - convert gym code/location to address
- - get list of games via Selenium/requests and bs4
  - print something more useful than the event URL
  - check for events before adding duplicates
- - add attendees(teammates) to events
 """
 
 
@@ -91,6 +90,7 @@ def add_game_event(
     start_time=None,
     year=None,
     tz="America/New_York",
+    emails=[],
 ):
     """Add a game to the calendar."""
     if not start_dt or not start_time:
@@ -112,26 +112,42 @@ def add_game_event(
         "dateTime": (dt_obj + timedelta(hours=1)).strftime(dt_to_str),
         "timeZone": tz,
     }
+    emails = [{"email": i} for i in emails]
+    if emails:
+        event["attendees"] = emails
     return event
+
+
+def get_emails():
+    """Get list of teammate emails."""
+    data = []
+    with open("teammate_emails.txt", "r") as f:
+        data = f.readlines()
+        data = [i.strip() for i in data]
+    return data
 
 
 def main():
     """Main script."""
-    service = authenticate_service()
     creds = read_creds()
+    service = authenticate_service()
     calendar_id = creds["calendar_id"]
     # get_events(service, calendar_id)
-    event_info = event_list()
-    [teamname, events] = event_info
+    event_info = get_schedule()
+    [team_name, events] = event_info
+    emails = get_emails()
     for i in events:
-        event_details = add_game_event(teamname, i[3], i[1], i[0], i[2])
+        event_details = add_game_event(
+            team_name,
+            description=i[3],
+            location=i[1],
+            start_dt=i[0],
+            start_time=i[2],
+            emails=emails,
+        )
         create_event(service, calendar_id, event_details)
+        # print(event_details)
     return True
-
-
-def event_list():
-    """Manually entered list of events, should use selenium/bs4 later."""
-    return ["my team name", [["10/15", "gym_loc", "9:10", "vs. team name"]]]
 
 
 if __name__ == "__main__":

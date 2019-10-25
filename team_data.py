@@ -12,13 +12,17 @@ from helpers import read_creds
 
 def get_schedule():
     """Get data using selenium."""
-    chrome_path = os.path.join(
-        os.path.dirname(os.path.abspath(__file__)), "vendor", "chromedriver"
-    )
-    driver = webdriver.Chrome(executable_path=chrome_path)
-    login(driver)
-    team_page = get_latest_team_page(driver)
-    return parse_team_data(team_page)
+    try:
+        chrome_path = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), "vendor", "chromedriver"
+        )
+        driver = webdriver.Chrome(executable_path=chrome_path)
+        login(driver)
+        team_page = get_latest_team_page(driver)
+        team_data = parse_team_data(team_page)
+    finally:
+        driver.close()
+    return team_data
 
 
 def login(driver=None):
@@ -61,6 +65,7 @@ def parse_team_data(html_doc):
     """
     games = []
     soup = BeautifulSoup(html_doc, "html.parser")
+    team_name = soup.find("div", class_="team").h1.span.text.strip()
     team_table = soup.find("div", class_="team_div").div.table.tbody
     rows = team_table.findChildren("tr", recursive=False)
     for row in rows[1:]:
@@ -74,4 +79,4 @@ def parse_team_data(html_doc):
                     cols[3].text.split()[0].strip(),
                 ]
             )
-    return games
+    return [team_name, games]
