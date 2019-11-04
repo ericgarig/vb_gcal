@@ -1,0 +1,2 @@
+check if event exists before creating it
+ensure/add/remove attendees separately since they may be added after event is created
