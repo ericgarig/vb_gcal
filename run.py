@@ -8,6 +8,7 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 
 from helpers import read_creds
+
 from team_data import get_schedule
 
 """
@@ -47,11 +48,19 @@ def authenticate_service():
     return service
 
 
-def get_events(service=None, calendar_id="primary", num_events=10):
+def get_events(
+    service=None,
+    calendar_id="primary",
+    num_events=10,
+    now=None,
+    print_events=True,
+):
     """Print the start and name of the next 'num_events'."""
     # 'Z' indicates UTC time
-    now = datetime.utcnow().isoformat() + "Z"
-    print("Getting the upcoming 10 events")
+    if not now:
+        now = datetime.utcnow().isoformat() + "Z"
+    if print_events:
+        print("Getting the upcoming {} events".format(num_events))
     events_result = (
         service.events()
         .list(
@@ -64,25 +73,30 @@ def get_events(service=None, calendar_id="primary", num_events=10):
         .execute()
     )
     events = events_result.get("items", [])
-
-    if not events:
+    if not events and print_events:
         print("No upcoming events found.")
     for event in events:
         start = event["start"].get("dateTime", event["start"].get("date"))
-        print(start, event["summary"])
-    return True
+        if print_events:
+            print(start, event["summary"])
+    return events
 
 
 def create_event(service=None, calendar_id="primary", details=None):
     """Create an event."""
+    details.pop("dt_obj", None)
     event = (
         service.events().insert(calendarId=calendar_id, body=details).execute()
     )
-    print("Event created: {}".format(event.get("htmlLink")))
-    return True
+    print(
+        "Event created: {} v. {}".format(
+            event.get("summary"), event.get("description")
+        )
+    )
+    return event["id"]
 
 
-def add_game_event(
+def event_details(
     title="event_from_py",
     description=None,
     location=None,
@@ -106,6 +120,7 @@ def add_game_event(
     dt_obj = datetime.strptime(
         "{} {} {} pm".format(year, start_dt, start_time), "%Y %m/%d %I:%M %p"
     )
+    event["dt_obj"] = dt_obj
     dt_to_str = "%Y-%m-%dT%H:%M:%S"
     event["start"] = {"dateTime": dt_obj.strftime(dt_to_str), "timeZone": tz}
     event["end"] = {
@@ -128,15 +143,22 @@ def get_emails():
 
 def main():
     """Main script."""
+    now = datetime.utcnow()
     creds = read_creds()
     service = authenticate_service()
     calendar_id = creds["calendar_id"]
-    # get_events(service, calendar_id)
-    event_info = get_schedule()
-    [team_name, events] = event_info
-    emails = [{"email": i} for i in get_emails()]
-    for i in events:
-        event_details = add_game_event(
+    schedule_info = get_schedule()
+    [team_name, game_schedule] = schedule_info
+    emails = [{"email": i, "optional": True} for i in get_emails()]
+    # existing_events = get_events(
+    #     service,
+    #     calendar_id,
+    #     num_events=len(game_schedule),
+    #     now=now.isoformat() + "Z",
+    #     print_events=False,
+    # )
+    for i in game_schedule:
+        one_game_details = event_details(
             team_name,
             description=i[3],
             location=i[1],
@@ -144,8 +166,8 @@ def main():
             start_time=i[2],
             emails=emails,
         )
-        create_event(service, calendar_id, event_details)
-        # print(event_details)
+        if now <= one_game_details["dt_obj"]:
+            create_event(service, calendar_id, one_game_details)
     return True
 
 

@@ -3,6 +3,10 @@ import os
 
 from bs4 import BeautifulSoup
 from selenium import webdriver
+from selenium.common.exceptions import (
+    SessionNotCreatedException,
+    WebDriverException,
+)
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as e_c
@@ -12,16 +16,31 @@ from helpers import read_creds
 
 def get_schedule():
     """Get data using selenium."""
+    team_data = [None, []]
+    chrome_path = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "vendor", "chromedriver"
+    )
     try:
-        chrome_path = os.path.join(
-            os.path.dirname(os.path.abspath(__file__)), "vendor", "chromedriver"
-        )
         driver = webdriver.Chrome(executable_path=chrome_path)
         login(driver)
         team_page = get_latest_team_page(driver)
         team_data = parse_team_data(team_page)
-    finally:
         driver.close()
+    except SessionNotCreatedException as e:
+        print(
+            "{}Get the version matching your Chrome browser and place it in "
+            + "'/vendor':\n{}".format(
+                str(e),
+                "https://sites.google.com/a/chromium.org/chromedriver/downloads",
+            )
+        )
+    except WebDriverException:
+        print(
+            "Get the latest 'chromedriver' binary from the link below and "
+            + "place it in '/vendor':\n{}".format(
+                "https://sites.google.com/a/chromium.org/chromedriver/downloads"
+            )
+        )
     return team_data
 
 
