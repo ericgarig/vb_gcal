@@ -2,6 +2,7 @@ __pycache__/*
 venv/*
 vendor/*
 
+.DS_Store
 credentials.json
 token.pickle
 teammate_emails.txt

@@ -82,15 +82,34 @@ def get_events(
     return events
 
 
-def create_event(service=None, calendar_id="primary", details=None):
+def create_event(
+    service=None, calendar_id="primary", details=None, creds={}, event_id=None
+):
     """Create an event."""
+    event_action = "created" if event_id is None else "updated"
     details.pop("dt_obj", None)
-    event = (
-        service.events().insert(calendarId=calendar_id, body=details).execute()
-    )
+    if creds.get("create_events"):
+        if event_id is None:
+            event = (
+                service.events()
+                .insert(calendarId=calendar_id, body=details)
+                .execute()
+            )
+        else:
+            event = (
+                service.events()
+                .update(calendarId=calendar_id, body=details, eventId=event_id)
+                .execute()
+            )
+    else:
+        event = {
+            "id": "999 - email send skipped",
+            "summary": details.get("summary"),
+            "description": details.get("description"),
+        }
     print(
-        "Event created: {} v. {}".format(
-            event.get("summary"), event.get("description")
+        "Event {}: {} v. {}".format(
+            event_action, event.get("summary"), event.get("description")
         )
     )
     return event["id"]
@@ -141,22 +160,52 @@ def get_emails():
     return data
 
 
+def get_event_id(event_list=[], details=None):
+    """Get the id of an event."""
+    if not details:
+        return None
+    # print("-----")
+    # print("EVENT_LIST", event_list)
+    # print("DETAILS", details)
+    existing_event = next(
+        (
+            one_event
+            for one_event in event_list
+            if one_event.get("summary") == details.get("summary")
+            and one_event.get("description") == details.get("description")
+            and one_event.get("start").get("dateTime")[:19]
+            == details.get("start").get("dateTime")
+        ),
+        None,
+    )
+    if existing_event is not None:
+        # print("EXISTING_EVENT:   ", existing_event)
+        # print("DETAILS:   ", details)
+        return existing_event["id"]
+    return None
+
+
 def main():
     """Main script."""
     now = datetime.utcnow()
     creds = read_creds()
     service = authenticate_service()
-    calendar_id = creds["calendar_id"]
+    calendar_id = creds.get("calendar_id")
     schedule_info = get_schedule()
+    # print("schedule_info", schedule_info)
     [team_name, game_schedule] = schedule_info
-    emails = [{"email": i, "optional": True} for i in get_emails()]
-    # existing_events = get_events(
-    #     service,
-    #     calendar_id,
-    #     num_events=len(game_schedule),
-    #     now=now.isoformat() + "Z",
-    #     print_events=False,
-    # )
+    emails = []
+    if creds.get("send_emails"):
+        emails = [{"email": i, "optional": True} for i in get_emails()]
+    existing_events = get_events(
+        service,
+        calendar_id,
+        num_events=len(game_schedule),
+        now=now.isoformat() + "Z",
+        print_events=False,
+    )
+    # for i in existing_events:
+    #     print("EXISTING EVENT:   ", i)
     for i in game_schedule:
         one_game_details = event_details(
             team_name,
@@ -167,7 +216,12 @@ def main():
             emails=emails,
         )
         if now <= one_game_details["dt_obj"]:
-            create_event(service, calendar_id, one_game_details)
+            event_id = get_event_id(existing_events, one_game_details)
+            # print("ONE DETAIL:   ", one_game_details)
+            # print("EVENT ID", event_id)
+            create_event(
+                service, calendar_id, one_game_details, creds, event_id
+            )
     return True
 
 
