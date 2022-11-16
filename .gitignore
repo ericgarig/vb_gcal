@@ -1,8 +1,13 @@
-__pycache__/*
-venv/*
-vendor/*
-
+# Byte-compiled / optimized / DLL files
+__pycache__/
+.idea
 .DS_Store
-credentials.json
-token.pickle
-teammate_emails.txt
+
+# Environments
+venv/
+*.json
+config/*.txt
+*.yml
+
+# Vendor
+vendor/

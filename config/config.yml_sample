@@ -1,0 +1,17 @@
+flag:
+  create_events: true
+  print_events: true
+  add_email_guests: false
+  log_scrape: true
+  scrape_headless: true
+calendar:
+  token_path: config/token.json
+  creds_path: credentials.json
+  email_path: config/emails.txt
+  scopes: https://www.googleapis.com/auth/calendar
+  calendar_id: your-desired-calendar-id
+scrape:
+  chromedriver: your-chromedriver-name-in-vendor-folder
+  url: https://www.nyurban.com/volleyball
+  user: your-NYUrban-username
+  pwd: your-NYUrban-password
