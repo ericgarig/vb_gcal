@@ -10,6 +10,7 @@ calendar:
   email_path: config/emails.txt
   scopes: https://www.googleapis.com/auth/calendar
   calendar_id: your-desired-calendar-id
+  max_offset: 15w
 scrape:
   chromedriver: your-chromedriver-name-in-vendor-folder
   url: https://www.nyurban.com/volleyball

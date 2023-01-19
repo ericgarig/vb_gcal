@@ -14,6 +14,8 @@ import os
 
 from config import Config
 
+DRIVER_URL = "https://sites.google.com/chromium.org/driver/"
+
 
 class VbScrape:
     def __init__(self, cnf: Config):
@@ -50,18 +52,11 @@ class VbScrape:
                 self.driver = None
         except SessionNotCreatedException as e:
             print(
-                "{}Get the version matching your Chrome browser and place it in "
-                + "'/vendor':\n{}".format(
-                    str(e),
-                    "https://sites.google.com/a/chromium.org/chromedriver/downloads",
-                )
+                f">>>ERROR: {e.msg}Get the version matching your Chrome browser and place it in '/vendor' from:\n{DRIVER_URL}"
             )
-        except WebDriverException:
+        except WebDriverException as e:
             print(
-                "Get the latest 'chromedriver' binary from the link below and "
-                + "place it in '/vendor':\n{}".format(
-                    "https://sites.google.com/a/chromium.org/chromedriver/downloads"
-                )
+                f">>>ERROR: Get the latest 'chromedriver' binary from the link below and place it in '/vendor':\n{DRIVER_URL}"
             )
         except Exception as e:
             print(f">>> Some other exception with selenium: {e}")
@@ -110,7 +105,7 @@ class VbScrape:
     def parse_team_data(self) -> None:
         """
         Parse team data into a list.
-    
+
         Returns a list of games. Each game is a list with the following items:
         [datetime, location, opponent]
         """

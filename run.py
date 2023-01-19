@@ -24,7 +24,8 @@ def main():
 
     # create/update events
     gcal.authenticate_service()
-    gcal.add_events(team_name, schedule)
+    existing_events = gcal.get_upcoming_events(duration=gcal.max_offset)
+    gcal.add_events(team_name, schedule, existing_events)
 
 
 if __name__ == "__main__":
