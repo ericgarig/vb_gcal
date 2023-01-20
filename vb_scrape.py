@@ -1,6 +1,7 @@
 """Get most recent team data for NYUrban."""
 from datetime import datetime, timezone
 from urllib.parse import parse_qs
+import re
 
 from bs4 import BeautifulSoup
 from selenium import webdriver
@@ -126,7 +127,7 @@ class VbScrape:
                             "%m/%d %Y %I:%M%p %z",
                         ),
                         cols[1].div.a.text.strip(),
-                        cols[3].text.split()[0].strip(),
+                        next(sub for sub in re.split("\n|\t", cols[3].text) if sub),
                     ]
                 )
 

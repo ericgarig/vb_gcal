@@ -119,11 +119,14 @@ class GCal:
                 location=one_game[4] if one_game[4] else one_game[3],
                 start_dt=one_game[0],
             )
-            event_id = self.get_existing_id(details, existing_events)
-            status.append(self.add_one_event(details, event_id))
+            event = self.get_existing_event(details, existing_events)
+            event_id = event["id"] if event else None
+            status.append(self.add_one_event(details, event_id, event))
         return status
 
-    def add_one_event(self, details: dict = None, event_id: str = None) -> str:
+    def add_one_event(
+        self, details: dict = None, event_id: str = None, existing_event: dict = {}
+    ) -> str:
         """Create an event."""
         if self.create_events:
             if event_id is None:
@@ -133,19 +136,24 @@ class GCal:
                     .insert(calendarId=self.calendar_id, body=details)
                     .execute()
                 )
-            else:
+            elif self.update_needed(details, existing_event):
                 status = "updated"
                 event = (
                     self.service.events()
                     .update(calendarId=self.calendar_id, body=details, eventId=event_id)
                     .execute()
                 )
+            else:
+                status = "skip, no changes"
+                event = {
+                    **details,
+                    "id": event_id,
+                }
         else:
             status = "dry_run"
             event = {
+                **details,
                 "id": "999__dry_run",
-                "summary": details.get("summary"),
-                "description": details.get("description"),
             }
         if self.print_events:
             print(
@@ -153,6 +161,12 @@ class GCal:
                 f"{event.get('summary')} {event.get('description')} @ {event.get('start').get('dateTime')}"
             )
         return event["id"], status
+
+    def update_needed(self, details: dict, existing: dict) -> bool:
+        for i in details.keys():
+            if existing[i] != details[i]:
+                return False
+        return True
 
     def get_event_details(
         self,
@@ -176,11 +190,11 @@ class GCal:
         event["attendees"] = self.emails
         return event
 
-    def get_existing_id(self, details: dict, existing_events: list) -> str:
+    def get_existing_event(self, details: dict, existing_events: list) -> str:
         min_match = {k: details[k] for k in ("summary", "start", "end") if k in details}
         for i in existing_events:
             if min_match.items() <= i.items():
-                return i["id"]
+                return i
         return None
 
     @staticmethod
