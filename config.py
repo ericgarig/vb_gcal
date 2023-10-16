@@ -1,5 +1,4 @@
 import json
-from datetime import datetime, timezone
 
 import yaml
 
@@ -25,11 +24,9 @@ class Config:
 
     def get_email_list(self) -> list:
         """Get list of teammate emails."""
-        data = []
         with open(self.cnf_value("calendar.email_path"), "r") as f:
-            data = f.readlines()
-            data = [i.strip() for i in data]
-        return data
+            data = [i.strip() for i in f.readlines()]
+        return data if data else []
 
     def cnf_value(self, path: str, sub_dict=None) -> str:
         """Get value of dot-delimited config path."""
@@ -42,5 +39,5 @@ class Config:
             return self.cnf_value(remaining, sub_dict)
         return sub_dict
 
-    def cnf_list(self, path: str, delim=","):
-        return self.cnf_value(path).split(delim)
+    def cnf_list(self, path: str, delimiter: str = ","):
+        return self.cnf_value(path).split(delimiter)

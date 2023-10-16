@@ -1,37 +1,41 @@
 """Get most recent team data for NYUrban."""
+import os
+import re
+import sys
 from datetime import datetime, timezone
 from urllib.parse import parse_qs
-import re
 
+import pytz
 from bs4 import BeautifulSoup
 from selenium import webdriver
-from selenium.webdriver.common.keys import Keys
 from selenium.common.exceptions import SessionNotCreatedException, WebDriverException
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as e_c
 from selenium.webdriver.chrome.options import Options
-
-import os
+from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.support import expected_conditions as e_c
+from selenium.webdriver.support.ui import WebDriverWait
 
 from config import Config
-
-DRIVER_URL = "https://sites.google.com/chromium.org/driver/"
 
 
 class VbScrape:
     def __init__(self, cnf: Config):
         self.cnf = cnf
-        self.url = self.cnf.cnf_value("scrape.url")
+        self.url = self.cnf.cnf_value("scrape.vb_url")
+        self.driver_url = self.cnf.cnf_value("scrape.driver_url")
         self.log_scrape = self.cnf.cnf_value("flag.log_scrape")
         self.scrape_headless = self.cnf.cnf_value("flag.scrape_headless")
+        self.tz = self.cnf.cnf_value("timezone")
+
         self.driver = None
         self.html_doc = None
         self.team_name = None
         self.games = []
         self.gym = {}
 
-    def get_schedule(self) -> list:
-        """Get schedule for the current NY Urban season."""
+        self.get_driver()
+
+    def get_driver(self):
+        err_msg = None
         try:
             options = Options()
             if self.scrape_headless:
@@ -43,24 +47,34 @@ class VbScrape:
             self.driver = webdriver.Chrome(
                 executable_path=self.get_chromedriver_path(), options=options
             )
-            try:
-                self.login()
-                self.get_latest_team_page()
-                self.parse_team_data()
-                self.parse_gym_info()
-            finally:
-                self.driver.close()
-                self.driver = None
         except SessionNotCreatedException as e:
-            print(
-                f">>>ERROR: {e.msg}Get the version matching your Chrome browser and place it in '/vendor' from:\n{DRIVER_URL}"
+            err_msg = (
+                f"{e.msg}"
+                f"Get the version matching your Chrome browser and place it in '/vendor' from:"
+                f"\n{self.driver_url}"
             )
         except WebDriverException as e:
-            print(
-                f">>>ERROR: Get the latest 'chromedriver' binary from the link below and place it in '/vendor':\n{DRIVER_URL}"
+            err_msg = (
+                f"{e.msg}"
+                f"Get the latest 'chromedriver' binary from the link below and place it in '/vendor':"
+                f"\n{self.driver_url}"
             )
         except Exception as e:
-            print(f">>> Some other exception with selenium: {e}")
+            err_msg = f"Some other exception with selenium: {e}"
+        if err_msg:
+            print(f">>>ERROR: {err_msg}")
+            sys.exit()
+
+    def get_schedule(self) -> list:
+        """Get schedule for the current NY Urban season."""
+        try:
+            self.login()
+            self.get_latest_team_page()
+            self.parse_team_data()
+            self.parse_gym_info()
+        finally:
+            self.driver.close()
+            self.driver = None
         return [self.team_name, self.games, self.gym]
 
     def get_chromedriver_path(self) -> str:
@@ -118,18 +132,24 @@ class VbScrape:
         rows = team_table.findChildren("tr", recursive=False)
         for row in rows[1:]:
             cols = row.findChildren("td", recursive=False)
-            if "No Game This Week" not in cols[3].text:
-                self.games.append(
-                    [
-                        # TODO check for next-year rollover
-                        datetime.strptime(
-                            f"{cols[0].text.split()[1].strip()} {datetime.now().year} {cols[2].text.strip()}PM -0500",
-                            "%m/%d %Y %I:%M%p %z",
-                        ),
-                        cols[1].div.a.text.strip(),
-                        next(sub for sub in re.split("\n|\t", cols[3].text) if sub),
-                    ]
-                )
+            if "No Game This Week" in cols[3].text:
+                continue
+            self.games.append(
+                [
+                    # TODO check for next-year rollover
+                    # TODO check daylight savings
+                    self.game_time(cols),
+                    cols[1].div.a.text.strip(),
+                    next(sub for sub in re.split(r"\n|\t", cols[3].text) if sub),
+                ]
+            )
+
+    def game_time(self, data):
+        month_date = data[0].text.split()[1].strip()
+        year = datetime.now().year
+        time = data[2].text.strip()
+        dt = datetime.strptime(f"{month_date} {year} {time} PM", "%m/%d %Y %I:%M %p")
+        return pytz.timezone(self.tz).localize(dt)
 
     def parse_gym_info(self) -> None:
         """Get a dict mapping of gym code to name and address."""
@@ -146,7 +166,7 @@ class VbScrape:
             gym_name = cols[1].contents[0].text.strip()
             try:
                 address = parse_qs(cols[2].a.attrs.get("href")).get("address")[0]
-            except Exception:
+            except (Exception,):
                 address = None
             self.gym[gym_code] = [gym_name, address]
 

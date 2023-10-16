@@ -1,6 +1,7 @@
-from datetime import datetime, timedelta
 import os.path
 import re
+from datetime import datetime, timedelta
+from typing import Tuple
 
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
@@ -10,13 +11,7 @@ from googleapiclient.errors import HttpError
 
 from config import Config
 
-UNITS = {
-    "s": "seconds",
-    "m": "minutes",
-    "h": "hours",
-    "d": "days",
-    "w": "weeks",
-}
+UNITS = {"s": "seconds", "m": "minutes", "h": "hours", "d": "days", "w": "weeks"}
 
 
 class GCal:
@@ -31,11 +26,12 @@ class GCal:
         self.max_offset = self.cnf.cnf_value("calendar.max_offset")
         self.print_events = self.cnf.cnf_value("flag.print_events")
         self.create_events = self.cnf.cnf_value("flag.create_events")
-        self.emails = (
-            [{"email": i, "optional": True} for i in self.cnf.get_email_list()]
-            if self.cnf.cnf_value("flag.add_email_guests")
-            else []
-        )
+
+    def get_email_attendees(self):
+        # TODO confirm email obj
+        if self.cnf.cnf_value("flag.add_email_guests"):
+            return [{"email": i, "optional": True} for i in self.cnf.get_email_list()]
+        return []
 
     def authenticate_service(self) -> None:
         """Authenticate a service."""
@@ -68,20 +64,21 @@ class GCal:
     def get_upcoming_events(
         self,
         num_events: int = 100,
-        timeFrom: datetime = None,
-        timeUntil: datetime = None,
+        time_from: datetime = None,
+        time_until: datetime = None,
         duration: str = None,
     ) -> list:
         """Prints the start and name of the next 'num_events' on the user's calendar."""
+        events = []
         try:
             if not self.service:
                 self.authenticate_service()
-            if not timeFrom:
+            if not time_from:
                 # 'Z' indicates UTC time
-                timeFrom = datetime.utcnow().isoformat() + "Z"
+                time_from = datetime.utcnow().isoformat() + "Z"
             if duration:
-                timeUntil = (
-                    datetime.strptime(timeFrom, "%Y-%m-%dT%H:%M:%S.%fZ")
+                time_until = (
+                    datetime.strptime(time_from, "%Y-%m-%dT%H:%M:%S.%fZ")
                     + timedelta(seconds=GCal.convert_to_seconds(duration))
                 ).isoformat() + "Z"
             if self.print_events:
@@ -90,8 +87,8 @@ class GCal:
                 self.service.events()
                 .list(
                     calendarId=self.calendar_id,
-                    timeMin=timeFrom,
-                    timeMax=timeUntil,
+                    timeMin=time_from,
+                    timeMax=time_until,
                     maxResults=num_events,
                     singleEvents=True,
                     orderBy="startTime",
@@ -109,7 +106,7 @@ class GCal:
                 print(f"     {start} {event['summary']}")
         return events
 
-    def add_events(self, team_name: str, schedule: dict, existing_events) -> list:
+    def add_events(self, team_name: str, schedule: dict, existing_events: list) -> list:
         print(f"...creating events")
         status = []
         for one_game in schedule:
@@ -119,16 +116,16 @@ class GCal:
                 location=one_game[4] if one_game[4] else one_game[3],
                 start_dt=one_game[0],
             )
-            event = self.get_existing_event(details, existing_events)
-            event_id = event["id"] if event else None
-            status.append(self.add_one_event(details, event_id, event))
+            existing_event = GCal.get_existing_event(details, existing_events)
+            status.append(self.add_one_event(details, existing_event))
         return status
 
     def add_one_event(
-        self, details: dict = None, event_id: str = None, existing_event: dict = {}
-    ) -> str:
+        self, details: dict = None, existing_event: dict = {}
+    ) -> Tuple[str, str]:
         """Create an event."""
         if self.create_events:
+            event_id = existing_event.get("id")
             if event_id is None:
                 status = "created"
                 event = (
@@ -136,7 +133,7 @@ class GCal:
                     .insert(calendarId=self.calendar_id, body=details)
                     .execute()
                 )
-            elif self.update_needed(details, existing_event):
+            elif GCal.update_needed(details, existing_event):
                 status = "updated"
                 event = (
                     self.service.events()
@@ -145,24 +142,19 @@ class GCal:
                 )
             else:
                 status = "skip, no changes"
-                event = {
-                    **details,
-                    "id": event_id,
-                }
+                event = {**details, "id": event_id}
         else:
             status = "dry_run"
-            event = {
-                **details,
-                "id": "999__dry_run",
-            }
+            event = {**details, "id": "999__dry_run"}
         if self.print_events:
             print(
                 f"     {status}: "
-                f"{event.get('summary')} {event.get('description')} @ {event.get('start').get('dateTime')}"
+                f"{event.get('summary')} {event.get('description')} @ {event.get('start', {}).get('dateTime')}"
             )
-        return event["id"], status
+        return event.get("id"), status
 
-    def update_needed(self, details: dict, existing: dict) -> bool:
+    @staticmethod
+    def update_needed(details: dict, existing: dict) -> bool:
         for i in details.keys():
             if existing[i] != details[i]:
                 return False
@@ -174,7 +166,7 @@ class GCal:
         description=None,
         location=None,
         start_dt=None,
-        tz="America/New_York",
+        tz=None,
     ) -> dict:
         """Prepare event details."""
         if not start_dt:
@@ -184,18 +176,18 @@ class GCal:
             event["description"] = description
         if location:
             event["location"] = location
-        event["start"] = GCal.event_dt(start_dt, tz)
-        event["end"] = GCal.event_dt(start_dt + timedelta(hours=1), tz)
-        # TODO confirm email obj
-        event["attendees"] = self.emails
+        event["start"] = self.event_dt(start_dt)
+        event["end"] = self.event_dt(start_dt + timedelta(hours=1))
+        event["attendees"] = self.get_email_attendees()
         return event
 
-    def get_existing_event(self, details: dict, existing_events: list) -> str:
+    @staticmethod
+    def get_existing_event(details: dict, existing_events: list) -> dict:
         min_match = {k: details[k] for k in ("summary", "start", "end") if k in details}
         for i in existing_events:
             if min_match.items() <= i.items():
                 return i
-        return None
+        return {}
 
     @staticmethod
     def dt_to_str(dt: datetime) -> str:
@@ -204,8 +196,8 @@ class GCal:
             dt_str = dt_str[:-2] + ":" + dt_str[-2:]
         return dt_str
 
-    @staticmethod
-    def event_dt(dt: datetime, tz="America/New_York"):
+    def event_dt(self, dt: datetime, tz=None):
+        tz = tz if tz else self.cnf.cnf_value("timezone")
         return {"dateTime": GCal.dt_to_str(dt), "timeZone": tz}
 
     @staticmethod

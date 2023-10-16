@@ -4,6 +4,7 @@ flag:
   add_email_guests: false
   log_scrape: true
   scrape_headless: true
+timezone: America/New_York
 calendar:
   token_path: config/token.json
   creds_path: credentials.json
@@ -13,6 +14,7 @@ calendar:
   max_offset: 15w
 scrape:
   chromedriver: your-chromedriver-name-in-vendor-folder
-  url: https://www.nyurban.com/volleyball
+  vb_url: https://www.nyurban.com/volleyball
+  driver_url: https://sites.google.com/chromium.org/driver/
   user: your-NYUrban-username
   pwd: your-NYUrban-password
