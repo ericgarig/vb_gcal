@@ -3,34 +3,36 @@ import re
 from datetime import datetime, timedelta
 from typing import Tuple
 
+from app_props import AppProps
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
-from config import Config
-
 UNITS = {"s": "seconds", "m": "minutes", "h": "hours", "d": "days", "w": "weeks"}
 
 
 class GCal:
-    def __init__(self, cnf: Config) -> None:
-        self.cnf = cnf
+    def __init__(self) -> None:
         self.service = None
 
         # If modifying these scopes, delete the file token.json.
-        self.scopes = self.cnf.cnf_list("calendar.scopes")
+        self.scopes = AppProps("calendar.scopes").split(",")
 
-        self.calendar_id = self.cnf.cnf_value("calendar.calendar_id")
-        self.max_offset = self.cnf.cnf_value("calendar.max_offset")
-        self.print_events = self.cnf.cnf_value("flag.print_events")
-        self.create_events = self.cnf.cnf_value("flag.create_events")
+        self.calendar_id = AppProps("calendar.calendar_id")
+        self.max_offset = AppProps("calendar.max_offset")
+        self.print_events = AppProps("flag.print_events")
+        self.create_events = AppProps("flag.create_events")
 
-    def get_email_attendees(self):
+    @staticmethod
+    def get_email_attendees():
         # TODO confirm email obj
-        if self.cnf.cnf_value("flag.add_email_guests"):
-            return [{"email": i, "optional": True} for i in self.cnf.get_email_list()]
+        if AppProps("flag.add_email_guests"):
+            with open(AppProps("calendar.email_path"), "r") as f:
+                emails = [i.strip() for i in f.readlines()]
+            emails = emails if emails else []
+            return [{"email": i, "optional": True} for i in emails]
         return []
 
     def authenticate_service(self) -> None:
@@ -41,8 +43,8 @@ class GCal:
         # created automatically when the authorization flow completes for the first
         # time.
 
-        path_token = self.cnf.cnf_value("calendar.token_path")
-        path_creds = self.cnf.cnf_value("calendar.creds_path")
+        path_token = AppProps("calendar.token_path")
+        path_creds = AppProps("calendar.creds_path")
 
         if os.path.exists(path_token):
             creds = Credentials.from_authorized_user_file(path_token, self.scopes)
@@ -110,7 +112,7 @@ class GCal:
         print(f"...creating events")
         status = []
         for one_game in schedule:
-            details = self.get_event_details(
+            details = GCal.get_event_details(
                 title=team_name,
                 description=f"vs. {one_game[2]} @{one_game[1]}",
                 location=one_game[4] if one_game[4] else one_game[3],
@@ -120,9 +122,7 @@ class GCal:
             status.append(self.add_one_event(details, existing_event))
         return status
 
-    def add_one_event(
-        self, details: dict = None, existing_event: dict = {}
-    ) -> Tuple[str, str]:
+    def add_one_event(self, details: dict, existing_event: dict) -> Tuple[str, str]:
         """Create an event."""
         if self.create_events:
             event_id = existing_event.get("id")
@@ -160,13 +160,12 @@ class GCal:
                 return False
         return True
 
+    @staticmethod
     def get_event_details(
-        self,
         title="event_from_py",
         description=None,
         location=None,
         start_dt=None,
-        tz=None,
     ) -> dict:
         """Prepare event details."""
         if not start_dt:
@@ -176,9 +175,9 @@ class GCal:
             event["description"] = description
         if location:
             event["location"] = location
-        event["start"] = self.event_dt(start_dt)
-        event["end"] = self.event_dt(start_dt + timedelta(hours=1))
-        event["attendees"] = self.get_email_attendees()
+        event["start"] = GCal.event_dt(start_dt)
+        event["end"] = GCal.event_dt(start_dt + timedelta(hours=1))
+        event["attendees"] = GCal.get_email_attendees()
         return event
 
     @staticmethod
@@ -196,8 +195,9 @@ class GCal:
             dt_str = dt_str[:-2] + ":" + dt_str[-2:]
         return dt_str
 
-    def event_dt(self, dt: datetime, tz=None):
-        tz = tz if tz else self.cnf.cnf_value("timezone")
+    @staticmethod
+    def event_dt(dt: datetime, tz=None):
+        tz = tz if tz else AppProps("timezone")
         return {"dateTime": GCal.dt_to_str(dt), "timeZone": tz}
 
     @staticmethod

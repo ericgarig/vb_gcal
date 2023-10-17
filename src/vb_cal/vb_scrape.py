@@ -1,30 +1,30 @@
 """Get most recent team data for NYUrban."""
-import os
 import re
 import sys
 from datetime import datetime, timezone
+from pathlib import Path
 from urllib.parse import parse_qs
 
 import pytz
+from app_props import AppProps
 from bs4 import BeautifulSoup
 from selenium import webdriver
 from selenium.common.exceptions import SessionNotCreatedException, WebDriverException
 from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support import expected_conditions as e_c
 from selenium.webdriver.support.ui import WebDriverWait
 
-from config import Config
-
 
 class VbScrape:
-    def __init__(self, cnf: Config):
-        self.cnf = cnf
-        self.url = self.cnf.cnf_value("scrape.vb_url")
-        self.driver_url = self.cnf.cnf_value("scrape.driver_url")
-        self.log_scrape = self.cnf.cnf_value("flag.log_scrape")
-        self.scrape_headless = self.cnf.cnf_value("flag.scrape_headless")
-        self.tz = self.cnf.cnf_value("timezone")
+    def __init__(self):
+        self.url = AppProps("scrape.vb_url")
+        self.driver_url = AppProps("scrape.driver_url")
+        self.log_scrape = AppProps("flag.log_scrape")
+        self.scrape_headless = AppProps("flag.scrape_headless")
+        self.tz = AppProps("timezone")
 
         self.driver = None
         self.html_doc = None
@@ -39,13 +39,13 @@ class VbScrape:
         try:
             options = Options()
             if self.scrape_headless:
-                options.headless = True
+                options.add_argument("--headless=new")
             if self.log_scrape:
                 print(
                     f"...setting up {'headless ' if self.scrape_headless else ''}driver"
                 )
             self.driver = webdriver.Chrome(
-                executable_path=self.get_chromedriver_path(), options=options
+                options=options, service=Service(VbScrape.get_chromedriver_path())
             )
         except SessionNotCreatedException as e:
             err_msg = (
@@ -77,11 +77,10 @@ class VbScrape:
             self.driver = None
         return [self.team_name, self.games, self.gym]
 
-    def get_chromedriver_path(self) -> str:
-        return os.path.join(
-            os.path.dirname(os.path.abspath(__file__)),
-            "vendor",
-            self.cnf.cnf_value("scrape.chromedriver"),
+    @staticmethod
+    def get_chromedriver_path() -> str:
+        return str(
+            Path(__file__).parents[2] / "vendor" / AppProps("scrape.chromedriver")
         )
 
     def login(self) -> None:
@@ -92,12 +91,12 @@ class VbScrape:
             print(f"...logging in: {self.url}")
         self.driver.get(self.url)
         assert "Volleyball League" in self.driver.title
-        user = self.driver.find_element_by_id("username")
+        user = self.driver.find_element(By.ID, "username")
         user.clear()
-        user.send_keys(self.cnf.cnf_value("scrape.user"))
-        pwd = self.driver.find_element_by_id("password")
+        user.send_keys(AppProps("scrape.user"))
+        pwd = self.driver.find_element(By.ID, "password")
         pwd.clear()
-        pwd.send_keys(self.cnf.cnf_value("scrape.pwd"))
+        pwd.send_keys(AppProps("scrape.pwd"))
         pwd.send_keys(Keys.RETURN)
         if self.driver.title == "Login Problems":
             raise ValueError("invalid credentials")
@@ -110,7 +109,7 @@ class VbScrape:
         if self.log_scrape:
             print("...navigating to latest team details")
         assert "Team Listing" in self.driver.title
-        team_link = self.driver.find_element_by_xpath("//tbody/tr[2]/td/a")
+        team_link = self.driver.find_element(By.XPATH, "//tbody/tr[2]/td/a")
         team_link.click()
         WebDriverWait(self.driver, 10).until(e_c.title_is("Team Detail"))
         source = self.driver.page_source

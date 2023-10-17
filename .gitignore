@@ -1,13 +1,15 @@
 # Byte-compiled / optimized / DLL files
 __pycache__/
+.vscode/
 .idea
 .DS_Store
 
 # Environments
 venv/
+.venv/
 *.json
-config/*.txt
 *.yml
+*.txt
 
 # Vendor
 vendor/

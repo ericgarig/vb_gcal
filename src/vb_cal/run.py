@@ -6,17 +6,19 @@ todo:
  - ensure/add/remove attendees separately since they may be added after event is created
 """
 
-from config import Config
+from pathlib import Path
+
+from app_props import AppProps
+
 from gcal import GCal
 from vb_scrape import VbScrape
 
 
 def main():
     # config
-    cnf = Config()
-    cnf.read_config("config/config.yml")
-    scrape = VbScrape(cnf)
-    gcal = GCal(cnf)
+    AppProps("", str(Path(__file__).parents[2] / "config/config.yml"))
+    scrape = VbScrape()
+    gcal = GCal()
 
     # get schedule for latest team
     team_data = scrape.get_schedule()
