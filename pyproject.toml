@@ -15,6 +15,7 @@ google-auth-oauthlib = "^1.1.0"
 app-props = {git = "https://github.com/ericgarig/AppProps"}
 pytz = "^2023.3.post1"
 selenium = "^4.14.0"
+pydantic = "^2.9.2"
 
 
 [build-system]

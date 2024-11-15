@@ -104,7 +104,8 @@ class GCal:
             details = GCal.get_event_details(
                 title=one_game.team,
                 description=f"vs. {one_game.opponent} @{one_game.gym_code}",
-                location=one_game.gym_address if one_game.gym_address else one_game.gym_name,
+                # TODO: confirm using gym name (if specified)
+                location=one_game.gym_name if one_game.gym_name else one_game.gym_address,
                 start_dt=one_game.start,
                 attendees=email_groups.get(one_game.team, []),
             )

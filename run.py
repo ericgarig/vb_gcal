@@ -10,14 +10,14 @@ from pathlib import Path
 
 from app_props import AppProps
 
-from gcal import GCal
-from user_input import UserInput
-from vb_scrape import VbScrape
+from use_cases.gcal import GCal
+from use_cases.user_input import UserInput
+from use_cases.vb_scrape import VbScrape
 
 
 def main():
     # config
-    AppProps("", str(Path(__file__).parents[2] / "config/config.yml"))
+    AppProps("", str(Path(__file__).parents[0] / "config/config.yml"))
     scrape = VbScrape()
     gcal = GCal()
 

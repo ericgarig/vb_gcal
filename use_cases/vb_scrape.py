@@ -78,7 +78,7 @@ class VbScrape:
 
     @staticmethod
     def get_chromedriver_path() -> str:
-        return str(Path(__file__).parents[2] / "vendor" / AppProps("scrape.chromedriver"))
+        return str(Path(__file__).parents[1] / "vendor" / AppProps("scrape.chromedriver"))
 
     def login(self) -> None:
         """Authenticate into NY Urban."""
