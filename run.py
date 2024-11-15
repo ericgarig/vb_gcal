@@ -11,6 +11,7 @@ from pathlib import Path
 from app_props import AppProps
 
 from gcal import GCal
+from user_input import UserInput
 from vb_scrape import VbScrape
 
 
@@ -20,14 +21,17 @@ def main():
     scrape = VbScrape()
     gcal = GCal()
 
-    # get schedule for latest team
-    team_data = scrape.get_schedule()
-    [team_name, schedule] = scrape.parse_schedule(team_data, upcoming_only=True)
+    # get schedule for latest team(s)
+    schedule = scrape.get_schedule()
+    games = scrape.parse_schedule(upcoming_only=True)
+
+    # confirm settings
+    email_groups = UserInput().execute(schedule[0])
 
     # create/update events
     gcal.authenticate_service()
     existing_events = gcal.get_upcoming_events(duration=gcal.max_offset)
-    gcal.add_events(team_name, schedule, existing_events)
+    gcal.add_events(games, existing_events, email_groups)
 
 
 if __name__ == "__main__":

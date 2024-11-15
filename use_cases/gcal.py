@@ -1,7 +1,6 @@
 import os.path
 import re
 from datetime import datetime, timedelta
-from typing import Tuple
 
 from app_props import AppProps
 from google.auth.transport.requests import Request
@@ -9,6 +8,8 @@ from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
+
+from models.Game import Game
 
 UNITS = {"s": "seconds", "m": "minutes", "h": "hours", "d": "days", "w": "weeks"}
 
@@ -24,16 +25,6 @@ class GCal:
         self.max_offset = AppProps("calendar.max_offset")
         self.print_events = AppProps("flag.print_events")
         self.create_events = AppProps("flag.create_events")
-
-    @staticmethod
-    def get_email_attendees():
-        # TODO confirm email obj
-        if AppProps("flag.add_email_guests"):
-            with open(AppProps("calendar.email_path"), "r") as f:
-                emails = [i.strip() for i in f.readlines()]
-            emails = emails if emails else []
-            return [{"email": i, "optional": True} for i in emails]
-        return []
 
     def authenticate_service(self) -> None:
         """Authenticate a service."""
@@ -53,9 +44,7 @@ class GCal:
             if creds and creds.expired and creds.refresh_token:
                 creds.refresh(Request())
             else:
-                flow = InstalledAppFlow.from_client_secrets_file(
-                    path_creds, self.scopes
-                )
+                flow = InstalledAppFlow.from_client_secrets_file(path_creds, self.scopes)
                 creds = flow.run_local_server(port=0)
             # Save the credentials for the next run
             with open(path_token, "w") as token:
@@ -108,37 +97,32 @@ class GCal:
                 print(f"     {start} {event['summary']}")
         return events
 
-    def add_events(self, team_name: str, schedule: dict, existing_events: list) -> list:
+    def add_events(self, games: list[Game], existing_events: list, email_groups: dict) -> list:
         print(f"...creating events")
         status = []
-        for one_game in schedule:
+        for one_game in games:
             details = GCal.get_event_details(
-                title=team_name,
-                description=f"vs. {one_game[2]} @{one_game[1]}",
-                location=one_game[4] if one_game[4] else one_game[3],
-                start_dt=one_game[0],
+                title=one_game.team,
+                description=f"vs. {one_game.opponent} @{one_game.gym_code}",
+                location=one_game.gym_address if one_game.gym_address else one_game.gym_name,
+                start_dt=one_game.start,
+                attendees=email_groups.get(one_game.team, []),
             )
             existing_event = GCal.get_existing_event(details, existing_events)
             status.append(self.add_one_event(details, existing_event))
         return status
 
-    def add_one_event(self, details: dict, existing_event: dict) -> Tuple[str, str]:
+    def add_one_event(self, details: dict, existing_event: dict) -> tuple[str, str]:
         """Create an event."""
         if self.create_events:
             event_id = existing_event.get("id")
             if event_id is None:
                 status = "created"
-                event = (
-                    self.service.events()
-                    .insert(calendarId=self.calendar_id, body=details)
-                    .execute()
-                )
+                event = self.service.events().insert(calendarId=self.calendar_id, body=details).execute()
             elif GCal.update_needed(details, existing_event):
                 status = "updated"
                 event = (
-                    self.service.events()
-                    .update(calendarId=self.calendar_id, body=details, eventId=event_id)
-                    .execute()
+                    self.service.events().update(calendarId=self.calendar_id, body=details, eventId=event_id).execute()
                 )
             else:
                 status = "skip, no changes"
@@ -163,9 +147,10 @@ class GCal:
     @staticmethod
     def get_event_details(
         title="event_from_py",
-        description=None,
-        location=None,
-        start_dt=None,
+        description: str = None,
+        location: str = None,
+        start_dt: datetime = None,
+        attendees: list[str] = list,
     ) -> dict:
         """Prepare event details."""
         if not start_dt:
@@ -177,7 +162,7 @@ class GCal:
             event["location"] = location
         event["start"] = GCal.event_dt(start_dt)
         event["end"] = GCal.event_dt(start_dt + timedelta(hours=1))
-        event["attendees"] = GCal.get_email_attendees()
+        event["attendees"] = attendees
         return event
 
     @staticmethod
@@ -206,9 +191,7 @@ class GCal:
             timedelta(
                 **{
                     UNITS.get(m.group("unit").lower(), "seconds"): float(m.group("val"))
-                    for m in re.finditer(
-                        r"(?P<val>\d+(\.\d+)?)(?P<unit>[smhdw]?)", s, flags=re.I
-                    )
+                    for m in re.finditer(r"(?P<val>\d+(\.\d+)?)(?P<unit>[smhdw]?)", s, flags=re.I)
                 }
             ).total_seconds()
         )
