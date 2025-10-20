@@ -15,6 +15,6 @@ calendar:
 scrape:
   chromedriver: your-chromedriver-name-in-vendor-folder
   vb_url: https://www.nyurban.com/volleyball
-  driver_url: https://sites.google.com/chromium.org/driver/
+  driver_url: https://googlechromelabs.github.io/chrome-for-testing/last-known-good-versions-with-downloads.json
   user: your-NYUrban-username
   pwd: your-NYUrban-password

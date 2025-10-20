@@ -1,12 +1,18 @@
 """Get most recent team data for NYUrban."""
 
+import os
+import platform
 import re
+import shutil
+import subprocess
 import sys
+import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import parse_qs
 
 import pytz
+import requests
 from app_props import AppProps
 from bs4 import BeautifulSoup
 from selenium import webdriver
@@ -37,6 +43,8 @@ class VbScrape:
 
         self.get_driver()
 
+    # TODO: move get_driver() and all logic associated with setting-up/downloading/etc... the driver into separate use case
+
     def get_driver(self):
         err_msg = None
         try:
@@ -47,11 +55,22 @@ class VbScrape:
                 print(f"...setting up {'headless ' if self.scrape_headless else ''}driver")
             self.driver = webdriver.Chrome(options=options, service=Service(VbScrape.get_chromedriver_path()))
         except SessionNotCreatedException as e:
-            err_msg = (
-                f"{e.msg}"
-                f"Get the version matching your Chrome browser and place it in '/vendor' from:"
-                f"\n{self.driver_url}"
-            )
+            match = re.search(r"Chrome version (\d+).*?Current browser version is (\d+)", e.msg, re.DOTALL)
+            if match and "ChromeDriver" in e.msg:
+                current_version = match.group(1)
+                latest_version = match.group(2)
+                print(f"     ...outdated chromedriver detected (v. {current_version}), downloading v. {latest_version}")
+                self.get_latest_chromedriver(int(latest_version))
+                err_msg = (
+                    f"Downloaded latest chromedriver. Update 'scrape.chromedriver' evn variable. Please try again."
+                )
+
+            else:
+                err_msg = (
+                    f"{e.msg}"
+                    f"Get the version matching your Chrome browser and place it in '/vendor' from:"
+                    f"\n{self.driver_url}"
+                )
         except WebDriverException as e:
             err_msg = (
                 f"{e.msg}"
@@ -78,7 +97,13 @@ class VbScrape:
 
     @staticmethod
     def get_chromedriver_path() -> str:
-        return str(Path(__file__).parents[1] / "vendor" / AppProps("scrape.chromedriver"))
+        vendor_path = Path(__file__).parents[1] / "vendor"
+        driver_name = AppProps("scrape.chromedriver")
+        if not driver_name or driver_name == "latest":
+            driver_path = max(vendor_path.iterdir(), key=lambda p: p.name)
+        else:
+            driver_path = vendor_path / driver_name
+        return str(driver_path)
 
     def login(self) -> None:
         """Authenticate into NY Urban."""
@@ -193,3 +218,111 @@ class VbScrape:
             one_game.gym_address = gym_info[1]
             games.append(one_game)
         return games
+
+    def get_latest_chromedriver(self, latest_version: int):
+        driver_info = requests.get(self.driver_url)
+        if driver_info.status_code != 200:
+            raise Exception(f"Error getting driver info: {driver_info.status_code}")
+        driver_info = driver_info.json()
+        platform_data = driver_info.get("channels", {}).get("Stable", {}).get("downloads", {}).get("chromedriver", {})
+        platform_key = self.get_platform_key()
+        print(f"         ...detected platform: '{platform_key}'")
+
+        for item in platform_data:
+            if item.get("platform") == platform_key:
+                new_driver_url = item.get("url")
+                break
+        else:
+            raise Exception("Error: Platform not supported or could not be determined.")
+        self.install_chromedriver(new_driver_url, latest_version)
+
+    @staticmethod
+    def get_platform_key():
+        """Maps the current system's OS and architecture to a platform key."""
+        os_name = platform.system().lower()
+        machine = platform.machine().lower()
+
+        if os_name == "linux":
+            return "linux64"
+
+        elif os_name == "darwin":
+            if "arm" in machine:
+                return "mac-arm64"
+            elif "64" in machine or "x86" in machine:
+                return "mac-x64"
+
+        elif os_name == "windows":
+            if "64" in machine or "amd64" in machine:
+                return "win64"
+            elif "32" in machine:
+                return "win32"
+
+        raise Exception(f"Unsupported platform: {os_name} {machine}")
+
+    def install_chromedriver(self, url: str, version: int):
+        repo_root = Path(__file__).resolve().parents[1]
+        vendor_dir = repo_root / "vendor"
+        temp_download_path = vendor_dir / "chromedriver_temp.zip"
+        uncompressed_driver_path = vendor_dir / url.split("/")[-1].split(".")[0]
+        final_path = vendor_dir / f"chromedriver_{version}"
+        extracted_driver_path = uncompressed_driver_path / "chromedriver"
+
+        self.download_by_stream(url, temp_download_path)
+
+        print("         ...unzipping file and finding chromedriver...")
+        try:
+            with zipfile.ZipFile(temp_download_path, "r") as zip_ref:
+                zip_ref.extractall(vendor_dir)
+        except (zipfile.BadZipFile, FileNotFoundError) as e:
+            os.remove(temp_download_path)
+            raise Exception(f"Error during extraction: {e}")
+        if not extracted_driver_path or not extracted_driver_path.exists():
+            raise FileNotFoundError("Chromedriver executable not found in the zip file's top level.")
+        if os.name != "nt":
+            os.chmod(extracted_driver_path, 0o755)
+
+        print(f"         ...moving driver to '{vendor_dir}'")
+        try:
+            shutil.move(extracted_driver_path, final_path)
+        except Exception as e:
+            print(f"Error during move/rename: {e}")
+
+        print("         ...cleaning up temporary zip file.")
+        if temp_download_path.exists():
+            os.remove(temp_download_path)
+        if uncompressed_driver_path.exists() and uncompressed_driver_path.is_dir():
+            shutil.rmtree(uncompressed_driver_path)
+        self.approve_driver_for_macos(final_path)
+
+    @staticmethod
+    def download_by_stream(url: str, download_file_path: Path):
+        print(f"         ...downloading driver from: {url}")
+        response = requests.get(url, stream=True)
+        response.raise_for_status()
+        with open(download_file_path, "wb") as file:
+            for chunk in response.iter_content(chunk_size=8192):
+                file.write(chunk)
+        print("             ...download successful.")
+
+    @staticmethod
+    def approve_driver_for_macos(driver_path: Path):
+        """
+        Removes the macOS Gatekeeper quarantine attribute from the driver executable.
+        This resolves the "cannot be verified is free of malware" error.
+        """
+        if os.name != "posix" or platform.system().lower() != "darwin":
+            # skip, not on a mac
+            return
+
+        print("         ...removing quarantine attribute for driver")
+        try:
+            command = ["xattr", "-d", "com.apple.quarantine", str(driver_path)]
+            subprocess.run(command, check=True, capture_output=True, text=True)
+        except subprocess.CalledProcessError as e:
+            print(f"   -> Warning: Failed to remove quarantine attribute. Error: {e.stderr.strip()}")
+            print(
+                "   -> You may need to run this script with elevated permissions (sudo) or manually approve the driver."
+            )
+
+        except FileNotFoundError:
+            print("   -> Error: 'xattr' command not found. Cannot remove quarantine attribute.")
