@@ -115,7 +115,10 @@ class GCal:
 
     def add_one_event(self, details: dict, existing_event: dict) -> tuple[str, str]:
         """Create an event."""
-        if self.create_events:
+        if not self.create_events:
+            status = "dry_run"
+            event = {**details, "id": "999__dry_run"}
+        else:
             event_id = existing_event.get("id")
             if event_id is None:
                 status = "created"
@@ -128,14 +131,10 @@ class GCal:
             else:
                 status = "skip, no changes"
                 event = {**details, "id": event_id}
-        else:
-            status = "dry_run"
-            event = {**details, "id": "999__dry_run"}
+
         if self.print_events:
-            print(
-                f"     {status}: "
-                f"{event.get('summary')} {event.get('description')} @ {event.get('start', {}).get('dateTime')}"
-            )
+            desc = f"{event.get('summary')} {event.get('description')} @ {event.get('start', {}).get('dateTime')}"
+            print(f"     {status}: {desc}")
         return event.get("id"), status
 
     @staticmethod

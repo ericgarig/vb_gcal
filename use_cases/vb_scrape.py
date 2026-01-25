@@ -25,6 +25,7 @@ from selenium.webdriver.support import expected_conditions as e_c
 from selenium.webdriver.support.ui import WebDriverWait
 
 from models.Game import Game
+from use_cases.one_password import OnePassword
 
 
 class VbScrape:
@@ -62,7 +63,7 @@ class VbScrape:
                 print(f"     ...outdated chromedriver detected (v. {current_version}), downloading v. {latest_version}")
                 self.get_latest_chromedriver(int(latest_version))
                 err_msg = (
-                    f"Downloaded latest chromedriver. Update 'scrape.chromedriver' evn variable. Please try again."
+                    f"Downloaded latest chromedriver. Update 'scrape.chromedriver' env variable. Please try again."
                 )
 
             else:
@@ -105,21 +106,49 @@ class VbScrape:
             driver_path = vendor_path / driver_name
         return str(driver_path)
 
+    @staticmethod
+    def get_creds() -> tuple[str, str]:
+        """Get credentials to login."""
+        user = AppProps("scrape.user")
+        pwd = AppProps("scrape.pwd")
+
+        if not user or not pwd:
+            raise ValueError("missing login credentials")
+
+        if not user.startswith("op://") and not pwd.startswith("op://"):
+            return user, pwd
+
+        op = OnePassword()
+        if user.startswith("op://"):
+            user = op.get_secret(user)
+
+        if pwd.startswith("op://"):
+            pwd = op.get_secret(pwd)
+
+        if not user or not pwd:
+            raise ValueError("Credentials missing in config and 1Password fetch failed.")
+
+        return user, pwd
+
     def login(self) -> None:
         """Authenticate into NY Urban."""
         if not self.driver:
             return None
+
+        user, pwd = self.get_creds()
+
         if self.log_scrape:
             print(f"...logging in: {self.url}")
         self.driver.get(self.url)
         assert "Volleyball League" in self.driver.title
-        user = self.driver.find_element(By.ID, "username")
-        user.clear()
-        user.send_keys(AppProps("scrape.user"))
-        pwd = self.driver.find_element(By.ID, "password")
-        pwd.clear()
-        pwd.send_keys(AppProps("scrape.pwd"))
-        pwd.send_keys(Keys.RETURN)
+
+        user_input = self.driver.find_element(By.ID, "username")
+        user_input.clear()
+        user_input.send_keys(user)
+        pwd_input = self.driver.find_element(By.ID, "password")
+        pwd_input.clear()
+        pwd_input.send_keys(pwd)
+        pwd_input.send_keys(Keys.RETURN)
         if self.driver.title == "Login Problems":
             raise ValueError("invalid credentials")
         WebDriverWait(self.driver, 10).until(e_c.title_is("Team Listing"))
