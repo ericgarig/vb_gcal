@@ -24,7 +24,8 @@ from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support import expected_conditions as e_c
 from selenium.webdriver.support.ui import WebDriverWait
 
-from models.Game import Game
+from common.environment import get_platform_key
+from models.game import Game
 from use_cases.one_password import OnePassword
 
 
@@ -39,8 +40,6 @@ class VbScrape:
 
         self.driver = None
         self.html_doc = []
-        self.games: list[Game] = []
-        self.gyms: dict[str, list[str]] = {}
 
         self.get_driver()
 
@@ -53,7 +52,7 @@ class VbScrape:
             if self.scrape_headless:
                 options.add_argument("--headless=new")
             if self.log_scrape:
-                print(f"...setting up {'headless ' if self.scrape_headless else ''}driver")
+                print(f" ...setting up {'headless ' if self.scrape_headless else ''}driver")
             self.driver = webdriver.Chrome(options=options, service=Service(VbScrape.get_chromedriver_path()))
         except SessionNotCreatedException as e:
             match = re.search(r"Chrome version (\d+).*?Current browser version is (\d+)", e.msg, re.DOTALL)
@@ -89,12 +88,12 @@ class VbScrape:
         try:
             self.login()
             self.get_latest_team_page()
-            self.parse_team_data()
-            self.parse_gym_info()
+            games = self.parse_team_data()
+            gyms = self.parse_gym_info()
         finally:
             self.driver.close()
             self.driver = None
-        return self.games, self.gyms
+        return games, gyms
 
     @staticmethod
     def get_chromedriver_path() -> str:
@@ -138,7 +137,7 @@ class VbScrape:
         user, pwd = self.get_creds()
 
         if self.log_scrape:
-            print(f"...logging in: {self.url}")
+            print(f" ...logging in: {self.url}")
         self.driver.get(self.url)
         assert "Volleyball League" in self.driver.title
 
@@ -158,7 +157,7 @@ class VbScrape:
         if not self.driver:
             return
         if self.log_scrape:
-            print("...navigating to latest team details")
+            print(" ...navigating to latest team details")
         for i in range(self.num_teams):
             # ensure on team list page
             assert "Team Listing" in self.driver.title
@@ -175,15 +174,11 @@ class VbScrape:
             # go back
             self.driver.execute_script("window.history.go(-1)")
 
-    def parse_team_data(self) -> None:
-        """
-        Parse team data into a list.
-
-        Returns a list of games. Each game is a list with the following items:
-        [datetime, location, opponent]
-        """
+    def parse_team_data(self) -> list[Game]:
+        """Parse team data into a list of games."""
         if self.log_scrape:
-            print("...retrieving schedule(s)")
+            print(" ...retrieving schedule(s)")
+        games = []
         for one_team in self.html_doc:
             soup = BeautifulSoup(one_team, "html.parser")
             team_name = soup.find("div", class_="team").h1.span.text.strip()
@@ -193,60 +188,70 @@ class VbScrape:
                 cols = row.findChildren("td", recursive=False)
                 if "No Game This Week" in cols[3].text:
                     continue
-                self.games.append(
-                    # TODO check for next-year rollover
-                    # TODO check daylight savings
-                    Game.parse_obj(
-                        {
-                            "start": self.game_time(cols),
-                            "team": team_name,
-                            "gym_code": cols[1].div.a.text.strip(),
-                            "opponent": next(sub for sub in re.split(r"\n|\t", cols[3].text) if sub),
-                        },
-                    )
+
+                # TODO check for next-year rollover
+                # TODO check daylight savings
+                new_game = Game(
+                    start=self.game_time(cols),
+                    team=team_name,
+                    gym_code=cols[1].div.a.text.strip(),
+                    opponent=next(sub for sub in re.split(r"\n|\t", cols[3].text) if sub),
                 )
+                games.append(new_game)
+        if self.log_scrape:
+            print(f"     ...found {len(games)} games")
+
+        return games
 
     def game_time(self, data) -> datetime:
         month_date = data[0].text.split()[1].strip()
         year = datetime.now().year
         time = data[2].text.strip()
-        dt = datetime.strptime(f"{month_date} {year} {time} PM", "%m/%d %Y %I:%M %p")
-        return pytz.timezone(self.tz).localize(dt)
 
-    def parse_gym_info(self) -> None:
+        dt = datetime.strptime(f"{month_date} {year} {time} PM", "%m/%d %Y %I:%M %p")
+        local_tz = pytz.timezone(self.tz)
+        local_dt = local_tz.localize(dt)
+        return local_dt.astimezone(timezone.utc)
+
+    def parse_gym_info(self) -> dict[str, list[str]]:
         """Get a dict mapping of gym code to name and address."""
         if self.log_scrape:
-            print("...retrieving gyms")
+            print(" ...retrieving gyms")
         soup = BeautifulSoup(self.html_doc[0], "html.parser")
         gym_table = soup.find("div", class_="locationcontent").div.table.tbody
         rows = gym_table.findChildren("tr", recursive=False)
+
+        gyms = {}
         for row in rows[1:]:
             cols = row.findChildren("td", recursive=False)
             gym_code = cols[0].string
-            if gym_code in self.gyms:
+            if gym_code in gyms:
                 continue
             gym_name = cols[1].contents[0].text.strip()
             try:
                 address = parse_qs(cols[2].a.attrs.get("href")).get("address")[0]
             except (Exception,):
                 address = None
-            self.gyms[gym_code] = [gym_name, address]
+            gyms[gym_code] = [gym_name, address]
+        if self.log_scrape:
+            print(f"     ...found {len(gyms)} gyms")
 
-    def parse_schedule(self, schedule: tuple[list[Game], dict] = None, upcoming_only=False) -> list[Game]:
+        return gyms
+
+    @staticmethod
+    def parse_schedule(raw_games: list[Game], gyms: dict[str, list[str]], upcoming_only=False) -> list[Game]:
         """Get the schedule with gym names and locations, optionally filtering out past games."""
-        scheduled_games = schedule[0] if schedule else self.games
-        gyms = schedule[1] if schedule else self.gyms
+        from_ts = datetime.now(timezone.utc) if upcoming_only else datetime(2000, 1, 1, tzinfo=timezone.utc)
 
-        from_ts = datetime.now(timezone.utc) if upcoming_only else datetime(2000, 1, 1)
-        games = []
-        for one_game in scheduled_games:
+        parsed_games = []
+        for one_game in raw_games:
             if one_game.start < from_ts:
                 continue
             gym_info = gyms[one_game.gym_code]
             one_game.gym_name = gym_info[0]
             one_game.gym_address = gym_info[1]
-            games.append(one_game)
-        return games
+            parsed_games.append(one_game)
+        return parsed_games
 
     def get_latest_chromedriver(self, latest_version: int):
         driver_info = requests.get(self.driver_url)
@@ -254,7 +259,7 @@ class VbScrape:
             raise Exception(f"Error getting driver info: {driver_info.status_code}")
         driver_info = driver_info.json()
         platform_data = driver_info.get("channels", {}).get("Stable", {}).get("downloads", {}).get("chromedriver", {})
-        platform_key = self.get_platform_key()
+        platform_key = get_platform_key()
         print(f"         ...detected platform: '{platform_key}'")
 
         for item in platform_data:
@@ -264,29 +269,6 @@ class VbScrape:
         else:
             raise Exception("Error: Platform not supported or could not be determined.")
         self.install_chromedriver(new_driver_url, latest_version)
-
-    @staticmethod
-    def get_platform_key():
-        """Maps the current system's OS and architecture to a platform key."""
-        os_name = platform.system().lower()
-        machine = platform.machine().lower()
-
-        if os_name == "linux":
-            return "linux64"
-
-        elif os_name == "darwin":
-            if "arm" in machine:
-                return "mac-arm64"
-            elif "64" in machine or "x86" in machine:
-                return "mac-x64"
-
-        elif os_name == "windows":
-            if "64" in machine or "amd64" in machine:
-                return "win64"
-            elif "32" in machine:
-                return "win32"
-
-        raise Exception(f"Unsupported platform: {os_name} {machine}")
 
     def install_chromedriver(self, url: str, version: int):
         repo_root = Path(__file__).resolve().parents[1]

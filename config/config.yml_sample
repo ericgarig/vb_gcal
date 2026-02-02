@@ -10,11 +10,13 @@ calendar:
   creds_path: credentials.json
   email_path: config/emails.txt
   scopes: https://www.googleapis.com/auth/calendar
-  calendar_id: your-desired-calendar-id
+  calendar_id_vb: your-desired-calendar-id
+  calendar_id_rq1: your-desired-calendar-id
+  calendar_id_rq2: your-desired-calendar-id
   max_offset: 15w
 scrape:
   chromedriver: your-chromedriver-name-in-vendor-folder
   vb_url: https://www.nyurban.com/volleyball
   driver_url: https://googlechromelabs.github.io/chrome-for-testing/last-known-good-versions-with-downloads.json
-  user: your-NYUrban-username
-  pwd: your-NYUrban-password
+  user: your-NYUrban-username-or-1pwd-ref
+  pwd: your-NYUrban-password-or-1pwd-ref

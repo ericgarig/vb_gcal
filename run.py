@@ -6,32 +6,15 @@ todo:
  - ensure/add/remove attendees separately since they may be added after event is created
 """
 
-from pathlib import Path
+import sys
 
-from app_props import AppProps
-
-from use_cases.gcal import GCal
-from use_cases.user_input import UserInput
-from use_cases.vb_scrape import VbScrape
+from use_cases.main_entry import MainEntry
 
 
 def main():
-    # config
-    AppProps("", str(Path(__file__).parents[0] / "config/config.yml"))
-    scrape = VbScrape()
-    gcal = GCal()
-
-    # get schedule for latest team(s)
-    schedule = scrape.get_schedule()
-    games = scrape.parse_schedule(upcoming_only=True)
-
-    # confirm settings
-    email_groups = UserInput().execute(schedule[0])
-
-    # create/update events
-    gcal.authenticate_service()
-    existing_events = gcal.get_upcoming_events(duration=gcal.max_offset)
-    gcal.add_events(games, existing_events, email_groups)
+    param = sys.argv[1].lower() if len(sys.argv) > 1 else "ny urban"
+    me = MainEntry()
+    me.execute(param)
 
 
 if __name__ == "__main__":

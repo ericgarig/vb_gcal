@@ -27,7 +27,8 @@ token.
 
 Game info is locked behind a secure portal. To log in, credentials must be specified. While hard-coded strings can be
 specified, credentials can be pulled from 1Password via CLI.
-See [here](https://developer.1password.com/docs/cli/get-started) on how to get started
+See [here](https://developer.1password.com/docs/cli/get-started) on how to get started. Once the CLI is enabled in
+1password, you will be able to copy the secret reference and store that in the YML config.
 
 Dependencies can be installed with `poetry install`.
 
